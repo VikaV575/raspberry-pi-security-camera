@@ -1,5 +1,6 @@
 """Offline unit tests for PostgreSQL write helpers (no live server required)."""
 import json
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from backend.app.core import postgres
@@ -80,3 +81,32 @@ def test_delete_camera_deletes_children_before_parent():
     assert "DELETE FROM media" in sql[0]
     assert "DELETE FROM commands" in sql[1]
     assert "DELETE FROM cameras" in sql[2]
+
+
+def test_load_devices_reconstructs_existing_api_shape():
+    conn = MagicMock()
+    now = datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)
+    conn.execute.side_effect = [
+        [{"id": "camera-1", "name": "Kitchen", "last_seen": now}],
+        [{
+            "public_id": "media-1", "camera_id": "camera-1",
+            "media_type": "image", "storage_key": "photo.jpg",
+            "content_type": "image/jpeg", "size_bytes": 5, "created_at": now,
+        }],
+        [{"camera_id": "camera-1", "record": {
+            "id": "command-1", "type": "snapshot", "status": "completed"
+        }}],
+    ]
+    with (
+        patch("backend.app.core.postgres.connect") as connect,
+        patch("backend.app.core.postgres.import_legacy_once"),
+    ):
+        connect.return_value.__enter__.return_value = conn
+        devices = postgres.load_devices("unused.json")
+
+    camera = devices["camera-1"]
+    assert camera["name"] == "Kitchen"
+    assert camera["last_seen"] == now.isoformat()
+    assert camera["media"][0]["id"] == "media-1"
+    assert camera["media"][0]["url"] == "/uploads/photo.jpg"
+    assert camera["commands"][0]["status"] == "completed"
