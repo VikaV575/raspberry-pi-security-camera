@@ -121,7 +121,7 @@ Uploaded files are available under:
 
 ### Docker services and database
 
-Create a local `.env` file from `.env.example` and change the development password:
+If you do not already have a local `.env`, create one from `.env.example` and change the development password. If you already have `.env`, **do not overwrite it**:
 
 ```bash
 cp .env.example .env
