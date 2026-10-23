@@ -15,7 +15,14 @@ from ..core.activity import (
 )
 from ..core.config import UPLOAD_DIR, ISRAEL_TZ
 from ..core.state import devices
-from ..core.storage import save_devices
+from ..core.storage import (
+    save_devices,
+    persist_camera,
+    remove_camera,
+    persist_media,
+    remove_media,
+    persist_command,
+)
 from ..schemas.device import DeviceCreate
 from ..schemas.command import CommandCreate
 from ..services.device_ws_manager import ws_manager
@@ -51,6 +58,7 @@ async def queue_device_command(device_id: str, command: dict) -> dict:
 
     device = devices[device_id]
     payload, record = add_command(device, command)
+    persist_command(device_id, record)
     save_devices()
 
     try:
@@ -58,6 +66,7 @@ async def queue_device_command(device_id: str, command: dict) -> dict:
     except Exception as error:
         detail = getattr(error, "detail", str(error))
         update_command_status(device, record["id"], "error", error=str(detail))
+        persist_command(device_id, record)
         save_devices()
         raise
 
@@ -74,16 +83,18 @@ def create_device(device: DeviceCreate):
         "media": [],
         "commands": [],
     }
+    persist_camera(devices[device_id])
     save_devices()
     return devices[device_id]
 
 
 @router.delete("/{device_id}/remove")
 async def remove_device(device_id: str):
-    removed_device = devices.pop(device_id, None)
-    if removed_device is None:
+    if device_id not in devices:
         raise HTTPException(status_code=404, detail="Device not found")
 
+    remove_camera(device_id)
+    devices.pop(device_id)
     await ws_manager.disconnect(device_id)
     save_devices()
     return {"ok": True, "message": f"Device {device_id} removed"}
@@ -111,6 +122,18 @@ async def upload_file(device_id: str, file: UploadFile = File(...)):
         content_type=file.content_type,
         size_bytes=len(contents),
     )
+    if media["media_type"] not in ("image", "video"):
+        pop_media(device, media["id"])
+        os.remove(path)
+        raise HTTPException(status_code=415, detail="Only image and video uploads are supported")
+
+    try:
+        persist_media(device_id, media)
+    except Exception:
+        pop_media(device, media["id"])
+        os.remove(path)
+        raise
+
     save_devices()
 
     return {
@@ -131,6 +154,7 @@ async def delete_media(device_id: str, media_id: str):
     if item is None:
         raise HTTPException(status_code=404, detail="Media not found")
 
+    remove_media(device_id, media_id)
     path = media_path(item.get("filename", ""))
     file_deleted = False
     try:
@@ -156,7 +180,8 @@ async def list_devices():
         ensure_activity(device)
         if trim_command_history(device):
             activity_changed = True
-        if prune_missing_media(device, UPLOAD_DIR):
+        for missing in prune_missing_media(device, UPLOAD_DIR):
+            remove_media(device["id"], missing["id"])
             activity_changed = True
 
         device_copy = device.copy()
