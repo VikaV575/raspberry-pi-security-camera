@@ -1,6 +1,6 @@
 # Sec-Cam
 
-A Raspberry Pi smart security camera platform with a Python device agent, FastAPI backend, React dashboard, WebSocket command delivery, media history, command-status tracking, and live streaming through MediaMTX.
+A Raspberry Pi smart security camera platform with a Python device agent, FastAPI backend, React dashboard, WebSocket command delivery, PostgreSQL-backed camera/media/command metadata, command-status tracking, and live streaming through MediaMTX.
 
 ## Features
 
@@ -38,7 +38,7 @@ Raspberry Pi agent
         Browser live viewer
 ```
 
-The FastAPI backend acts as the control plane. It queues remote commands, receives command-status events from the Raspberry Pi, stores recent media and command history, and exposes that information to the React dashboard.
+The FastAPI backend acts as the control plane. It queues remote commands, receives command-status events from the Raspberry Pi, persists camera and activity metadata in PostgreSQL, and exposes recent activity to the React dashboard.
 
 Live video is sent directly from the Raspberry Pi to MediaMTX rather than passing through FastAPI. Snapshots and recorded clips are uploaded to FastAPI and displayed in the device media gallery.
 
@@ -69,7 +69,7 @@ Pi reports Done or Error
 Dashboard shows Completed or Failed
 ```
 
-The backend keeps a limited recent history for each device rather than an unlimited in-memory list.
+The backend displays the latest 24 media items and five commands per camera. PostgreSQL retains activity records across backend restarts; the in-memory dictionary is still used for the active WebSocket/UI state.
 
 ## Project Structure
 
@@ -78,7 +78,7 @@ backend/        FastAPI server, REST routes, WebSocket handling and storage
 frontend/       React dashboard, device controls, media gallery and status UI
 pi_agent/       Raspberry Pi camera and communication agent
 tests/          Python integration/unit tests and Vitest UI tests
-uploads/        Uploaded snapshots and recordings
+uploads/        Uploaded snapshots and recordings (object storage is a future step)\ndb/             PostgreSQL schema (idempotent setup/migration)
 docker-compose.yml
 mediamtx.yml
 ```
@@ -119,11 +119,39 @@ Uploaded files are available under:
 
 ## Run Locally
 
-### Docker services
+### Docker services and database
+
+Create a local `.env` file from `.env.example` and change the development password:
 
 ```bash
-docker compose up --build
+cp .env.example .env
 ```
+
+On first setup **or after pulling a schema update**, start PostgreSQL and apply the
+schema. Reapplying `db/schema.sql` is safe:
+
+```bash
+docker compose up -d db
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U camera_app -d camera_db < db/schema.sql
+docker compose up -d --build
+```
+
+PostgreSQL is available on host `127.0.0.1:5434` for inspection, while the
+backend connects to `db:5432` inside the Docker Compose network.
+
+**First startup migration:** existing devices, recent media metadata, and command
+records in `devices_db.json` are copied into PostgreSQL once. The source JSON
+file and files in `uploads/` remain unchanged. An import marker prevents deleted
+devices from being recreated on later restarts. Back up both before migrating.
+
+**Current scope:** PostgreSQL stores metadata only; snapshots and video files
+are still served from the mounted `uploads/` directory. A separate object-storage
+integration will move file bytes out of that directory. This local setup has
+no device authentication or protected media access yet: do not expose it to the
+public internet.
+
+If the database schema was not applied, backend startup will fail with a
+missing-table error; run the `psql` command above and restart the backend.
 
 - Dashboard: `http://localhost:5173`
 - Backend: `http://localhost:8000`
@@ -210,7 +238,7 @@ The dashboard refreshes device activity periodically, so command and upload chan
 Install Python test dependencies:
 
 ```bash
-python3 -m pip install pytest pytest-asyncio httpx
+python3 -m pip install -r backend/requirements.txt pytest pytest-asyncio httpx
 ```
 
 Run all Python tests:
@@ -243,7 +271,7 @@ The tests cover command handling, heartbeats, device lifecycle, offline failures
 ## Current Limitations
 
 - Devices are currently registered through the API rather than the dashboard.
-- Media and command history are stored with the device data and are limited to recent items; there is no dedicated database or pagination yet.
+- PostgreSQL now stores device, media and command metadata, but the UI currently displays only recent items and there is no pagination.\n- Media file bytes are still stored on the local Docker-mounted `uploads/` directory; object storage has not been implemented yet.\n- In-memory state supports one backend worker; scaling requires removing the process-local command queues and using shared state.\n- Database calls currently use synchronous psycopg connections, including from async routes; use pooling/async operations before production-scale traffic.
 - Authentication, cloud deployment, alerts, and computer-vision features are future work.
 
 ## Screenshots
