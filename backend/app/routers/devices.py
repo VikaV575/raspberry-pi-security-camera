@@ -76,16 +76,17 @@ async def queue_device_command(device_id: str, command: dict) -> dict:
 @router.post("")
 def create_device(device: DeviceCreate):
     device_id = str(uuid.uuid4())
-    devices[device_id] = {
+    new_device = {
         "id": device_id,
         "name": device.name,
         "last_seen": None,
         "media": [],
         "commands": [],
     }
-    persist_camera(devices[device_id])
+    persist_camera(new_device)
+    devices[device_id] = new_device
     save_devices()
-    return devices[device_id]
+    return new_device
 
 
 @router.delete("/{device_id}/remove")
@@ -150,12 +151,13 @@ async def delete_media(device_id: str, media_id: str):
         raise HTTPException(status_code=404, detail="Device not found")
 
     device = devices[device_id]
-    item = pop_media(device, media_id)
+    item = next((media for media in device.get("media", []) if media.get("id") == media_id), None)
     if item is None:
         raise HTTPException(status_code=404, detail="Media not found")
 
-    remove_media(device_id, media_id)
     path = media_path(item.get("filename", ""))
+    remove_media(device_id, media_id)
+    pop_media(device, media_id)
     file_deleted = False
     try:
         path.unlink()
