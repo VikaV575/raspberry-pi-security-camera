@@ -5,7 +5,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..core.activity import update_command_status
 from ..core.state import devices
-from ..core.storage import save_devices
+from ..core.storage import save_devices, persist_last_seen, persist_command
 from ..services.device_ws_manager import ws_manager
 
 router = APIRouter(prefix="/devices", tags=["device-ws"])
@@ -20,6 +20,7 @@ async def device_ws(device_id: str, websocket: WebSocket):
     await ws_manager.connect(device_id, websocket)
 
     devices[device_id]["last_seen"] = datetime.now(timezone.utc).isoformat()
+    persist_last_seen(device_id, devices[device_id]["last_seen"])
     save_devices()
 
     q = await ws_manager.get_queue(device_id)
@@ -46,18 +47,20 @@ async def device_ws(device_id: str, websocket: WebSocket):
 
             device = devices[device_id]
             device["last_seen"] = datetime.now(timezone.utc).isoformat()
+            persist_last_seen(device_id, device["last_seen"])
 
             if msg.get("type") == "status":
                 command = msg.get("command") or {}
                 command_id = command.get("id")
                 if command_id:
-                    update_command_status(
+                    updated = update_command_status(
                         device,
                         command_id=command_id,
                         agent_status=str(msg.get("status") or "unknown"),
                         error=msg.get("error"),
                         meta=msg.get("meta"),
                     )
+                    persist_command(device_id, updated)
 
             save_devices()
 
