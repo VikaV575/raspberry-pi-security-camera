@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import psycopg
-from psycopg.rows import dict_row
+from psycopg.rows import DictRow, dict_row
 from psycopg.types.json import Jsonb
 
 from .activity import MAX_COMMAND_ITEMS, MAX_MEDIA_ITEMS
@@ -21,8 +21,10 @@ def enabled() -> bool:
     return bool(os.getenv("DB_HOST"))
 
 
-def connect():
-    return psycopg.connect(
+def connect() -> psycopg.Connection[DictRow]:
+    # Specializing the connection type avoids a Pyright/Pylance inference
+    # issue that defaults psycopg.connect() to tuple rows.
+    return psycopg.Connection[DictRow].connect(
         host=os.environ["DB_HOST"],
         port=int(os.getenv("DB_PORT", "5432")),
         dbname=os.getenv("DB_NAME", "camera_db"),
