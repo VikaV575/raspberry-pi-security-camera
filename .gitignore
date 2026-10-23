@@ -26,6 +26,7 @@ dist/
 uploads/*
 !uploads/.gitkeep
 captures/
+*.png
 
 # Secrets / local env
 .env

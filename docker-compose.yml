@@ -1,4 +1,5 @@
 services:
+  
   backend:
     build:
       context: ./backend
@@ -8,7 +9,20 @@ services:
       - ./backend/app:/app/app
       - ./uploads:/app/uploads
       - ./devices_db.json:/app/devices_db.json
+
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: camera_db
+      DB_USER: camera_app
+      DB_PASSWORD: ${DB_PASSWORD}
+
+    depends_on:
+      db:
+        condition: service_healthy
+
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
 
   frontend:
     build:
@@ -31,3 +45,27 @@ services:
       - "8189:8189/udp" # WebRTC ICE/UDP
     volumes:
       - ./mediamtx.yml:/mediamtx.yml
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: camera_app
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: camera_db
+
+    ports:
+      - "127.0.0.1:5434:5432"
+
+    volumes:
+      - camera_pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U camera_app -d camera_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  camera_pgdata:

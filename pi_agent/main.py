@@ -31,6 +31,5 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\n[shutdown] agent stopped")
 
-
 if __name__ == "__main__":
     main()
