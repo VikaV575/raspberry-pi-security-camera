@@ -61,14 +61,25 @@ async def device_ws(device_id: str, websocket: WebSocket):
 
             save_devices()
 
+    # Stop both loops as soon as either side closes. Otherwise an abandoned
+    # sender may keep reading the shared queue and steal future commands.
+    sender = asyncio.create_task(sender_loop())
+    receiver = asyncio.create_task(receiver_loop())
     try:
-        await asyncio.gather(sender_loop(), receiver_loop())
+        done, _ = await asyncio.wait(
+            {sender, receiver}, return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in done:
+            task.result()
     except WebSocketDisconnect:
         print("WebSocketDisconnect")
-        await ws_manager.disconnect(device_id)
     except Exception as e:
         print("WS route exception:", repr(e))
-        await ws_manager.disconnect(device_id)
+    finally:
+        for task in (sender, receiver):
+            task.cancel()
+        await asyncio.gather(sender, receiver, return_exceptions=True)
+        await ws_manager.disconnect(device_id, websocket)
         try:
             await websocket.close()
         except Exception:

@@ -7,48 +7,66 @@ import {
 } from "../../../../frontend/src/utils/api.js";
 
 describe("api utils", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
   });
 
-  it("refreshDevices requests devices list", async () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("refreshDevices requests and parses the device list", async () => {
     const payload = [{ id: "cam-1" }];
-    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue({
+    fetch.mockResolvedValue({
+      ok: true,
       json: async () => payload,
     });
 
-    const result = await refreshDevices();
-
-    expect(fetchMock).toHaveBeenCalledWith(`${API}/devices`);
-    expect(result).toEqual(payload);
+    await expect(refreshDevices()).resolves.toEqual(payload);
+    expect(fetch).toHaveBeenCalledWith(`${API}/devices`);
   });
 
-  it("record sends remote command with duration", async () => {
-    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue({});
+  it("record sends a typed command with the requested duration", async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
 
     await record("cam-22", 12);
 
-    expect(fetchMock).toHaveBeenCalledWith(`${API}/devices/cam-22/command`, {
+    expect(fetch).toHaveBeenCalledWith(`${API}/devices/cam-22/command`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "record", seconds: 12 }),
     });
   });
 
-  it("startLive throws when backend returns non-ok", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValue({ ok: false });
+  it("startLive exposes the backend error message", async () => {
+    fetch.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ detail: "Device is offline" }),
+    });
 
-    await expect(startLive("cam-err")).rejects.toThrow(
-      "Failed to start live for device cam-err",
-    );
+    await expect(startLive("cam-err")).rejects.toThrow("Device is offline");
   });
 
   it("stopLive returns parsed backend response on success", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValue({
+    fetch.mockResolvedValue({
       ok: true,
       json: async () => ({ ok: true }),
     });
 
     await expect(stopLive("cam-3")).resolves.toEqual({ ok: true });
+  });
+
+  it("does not treat an HTTP error as a successful refresh", async () => {
+    fetch.mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ detail: "Service unavailable" }),
+    });
+
+    await expect(refreshDevices()).rejects.toThrow("Service unavailable");
   });
 });

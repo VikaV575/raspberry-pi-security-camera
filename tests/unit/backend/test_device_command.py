@@ -110,3 +110,40 @@ def test_command_without_type_returns_422():
     mock_push_command.assert_not_awaited()
 
     devices.pop(device_id, None)
+
+
+def test_record_duration_out_of_range_is_rejected_before_dispatch():
+    device_id = "camera-validate-seconds"
+    devices[device_id] = {"id": device_id, "name": "Camera", "last_seen": None}
+
+    with patch(
+        "backend.app.routers.devices.ws_manager.push_command",
+        new_callable=AsyncMock,
+    ) as mock_push:
+        for seconds in (-1, 0, 61):
+            response = client.post(
+                f"/devices/{device_id}/command",
+                json={"type": "record", "seconds": seconds},
+            )
+            assert response.status_code == 422
+
+    mock_push.assert_not_awaited()
+    devices.pop(device_id, None)
+
+
+def test_unsupported_command_type_is_rejected_by_api():
+    device_id = "camera-validate-type"
+    devices[device_id] = {"id": device_id, "name": "Camera", "last_seen": None}
+
+    with patch(
+        "backend.app.routers.devices.ws_manager.push_command",
+        new_callable=AsyncMock,
+    ) as mock_push:
+        response = client.post(
+            f"/devices/{device_id}/command",
+            json={"type": "factory_reset"},
+        )
+
+    assert response.status_code == 422
+    mock_push.assert_not_awaited()
+    devices.pop(device_id, None)
