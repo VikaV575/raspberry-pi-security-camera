@@ -16,9 +16,11 @@ class DeviceWSManager:
             self.ws_by_device[device_id] = ws
             self.queue_by_device.setdefault(device_id, asyncio.Queue())
 
-    async def disconnect(self, device_id: str):
+    async def disconnect(self, device_id: str, ws: WebSocket | None = None):
+        """An old connection must not unregister a newer one after reconnect."""
         async with self.lock:
-            self.ws_by_device.pop(device_id, None)
+            if ws is None or self.ws_by_device.get(device_id) is ws:
+                self.ws_by_device.pop(device_id, None)
 
     async def is_connected(self, device_id: str) -> bool:
         async with self.lock:
