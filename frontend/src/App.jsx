@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { refreshDevices } from "./utils/api.js";
 import { isOnline } from "./utils/time.js";
 import DeviceCard from "./components/DeviceCard.jsx";
-import "./App.css";
+import "./app.css";
 
 export default function App() {
   const [devices, setDevices] = useState([]);
