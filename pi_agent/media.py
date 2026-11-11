@@ -53,6 +53,11 @@ async def capture_snapshot() -> Path:
         "--height", "720",
     )
 
+    if not out_path.is_file():
+        raise RuntimeError(f"Snapshot file was not created: {out_path}")
+    if out_path.stat().st_size == 0:
+        raise RuntimeError(f"Snapshot file is empty: {out_path}")
+
     return out_path
 
 
